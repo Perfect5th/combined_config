@@ -4,10 +4,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Set
+from typing import Dict, List, Optional, Set
 
 
 class ConfigException(Exception):
@@ -178,12 +175,7 @@ class CombinedConfig:
         return {
             k
             for k in self.config_vars.keys()
-            if any(
-                (
-                    isinstance(s, argparse.Namespace)
-                    for s in self._get_sources(k)
-                )
-            )
+            if any((isinstance(s, argparse.Namespace) for s in self._get_sources(k)))
         }
 
     @property
@@ -212,8 +204,7 @@ class CombinedConfig:
     @singledispatchmethod
     def _get_value(self, config, key: str) -> any:
         raise ConfigException(
-            "Don't know how to fetch values "
-            f"from config with type {type(config)}",
+            "Don't know how to fetch values " f"from config with type {type(config)}",
         )
 
     @_get_value.register
