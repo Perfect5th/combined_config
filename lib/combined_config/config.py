@@ -4,7 +4,14 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, Iterator, List, Optional, Protocol, Set, Union
+
+
+CONFIG_TYPES = {
+    argparse.Namespace,
+    configparser.SectionProxy,
+    dict,
+}
 
 
 class ConfigException(Exception):
@@ -22,8 +29,8 @@ class ConfigVar:
 
     name: str
     shortname: Optional[str] = None
-    action: str = None
-    default: any = None
+    action: Optional[str] = None
+    default: Optional[Any] = None
     type: Optional[type] = None
     help: Optional[str] = None
     metavar: Optional[str] = None
@@ -52,11 +59,11 @@ class ConfigVar:
         return args
 
     @property
-    def parser_kwargs(self) -> Dict[str, any]:
+    def parser_kwargs(self) -> Dict[str, Any]:
         """The object's values in a format suitable to pass as the keyword
         arguments to `argparse.ArgumentParser.add_argument`.
         """
-        kwargs = {
+        kwargs: Dict[str, Any] = {
             "action": self.action,
             "help": self.help,
         }
@@ -92,13 +99,13 @@ class CombinedConfig:
         def __init__(self, config):
             self._config = config
 
-        def __getattr__(self, name: str) -> any:
+        def __getattr__(self, name: str) -> Any:
             if name not in self._config.config_vars:
                 raise AttributeError()
 
             return self._config.find(name)
 
-        def __getitem__(self, key: str) -> any:
+        def __getitem__(self, key: str) -> Any:
             if key not in self._config.config_vars:
                 raise KeyError()
 
@@ -111,7 +118,7 @@ class CombinedConfig:
             return len(self._config.config_vars)
 
     def __init__(self, *config_vars: ConfigVar):
-        self._configs = deque()
+        self._configs: deque = deque()
 
         self.config_vars = {}
         self.values = self.Values(self)
@@ -123,8 +130,13 @@ class CombinedConfig:
             if config_var.default is not None:
                 self.defaults[config_var.name] = config_var.default
 
-    def append(self, config: any) -> None:
+    def append(self, config: Any) -> None:
         """Adds `config` to the end of the collection of configs."""
+        if type(config) not in CONFIG_TYPES:
+            raise ConfigException(
+                f"Don't know how to fetch values from config with type {type(config)}",
+            )
+
         self._configs.append(config)
 
     @property
@@ -138,11 +150,11 @@ class CombinedConfig:
             if k in self.defaults and self.find(k) == self.defaults[k]
         }
 
-    def find(self, key: str) -> any:
+    def find(self, key: str) -> Any:
         """Search the configs in-order for `key`.
 
         :param str key: The name of the value to look for.
-        :returns any: The value found. None if not found.
+        :returns Any: The value found. None if not found.
         """
         for config in self._configs:
             value = self._get_value(config, key)
@@ -165,8 +177,13 @@ class CombinedConfig:
 
         return parser
 
-    def prepend(self, config: any) -> None:
+    def prepend(self, config: Any) -> None:
         """Adds `config` to the start of the collection of configs."""
+        if type(config) not in CONFIG_TYPES:
+            raise ConfigException(
+                f"Don't know how to fetch values from config with type {type(config)}",
+            )
+
         self._configs.appendleft(config)
 
     @property
@@ -179,7 +196,7 @@ class CombinedConfig:
         }
 
     @property
-    def variables_with_values(self) -> Dict[str, any]:
+    def variables_with_values(self) -> Dict[str, Any]:
         """The variables that have non-None values."""
         values = {}
 
@@ -191,7 +208,7 @@ class CombinedConfig:
 
         return values
 
-    def _get_sources(self, key: str) -> List[any]:
+    def _get_sources(self, key: str) -> Iterator[Any]:
         """Gets all configs that are currently providing the value for
         `key`.
         """
@@ -202,22 +219,47 @@ class CombinedConfig:
                 yield config
 
     @singledispatchmethod
-    def _get_value(self, config, key: str) -> any:
+    def _get_value(self, config, key: str) -> Any:
         raise ConfigException(
-            "Don't know how to fetch values " f"from config with type {type(config)}",
+            f"Don't know how to fetch values from config with type {type(config)}",
         )
 
     @_get_value.register
-    def _(self, config: dict, key: str) -> any:
+    def _(self, config: dict, key: str) -> Any:
         return config.get(key)
 
     @_get_value.register
-    def _(self, config: argparse.Namespace, key: str) -> any:
+    def _(self, config: argparse.Namespace, key: str) -> Any:
         return getattr(config, key, None)
 
     @_get_value.register
-    def _(self, config: configparser.SectionProxy, key: str) -> any:
+    def _(self, config: configparser.SectionProxy, key: str) -> Any:
         return config.get(key)
+
+
+class FileBackedConfig(Protocol):
+    def append(self, config: Any) -> None:
+        ...
+
+    @property
+    def defaulted_values(self) -> Set[str]:
+        ...
+
+    @property
+    def filename(self) -> str:
+        ...
+
+    @property
+    def ini_section_names(self) -> Dict[str, Union[str, List[str]]]:
+        ...
+
+    @property
+    def provided_args(self) -> Set[str]:
+        ...
+
+    @property
+    def variables_with_values(self) -> Dict[str, Any]:
+        ...
 
 
 class FileBackedConfigMixin:
@@ -235,26 +277,23 @@ class FileBackedConfigMixin:
             "class attribute or property."
         )
 
-    def read(self, filename: Optional[str] = None) -> None:
+    def read(self: FileBackedConfig) -> None:
         """Reads configuration from an ini-formatted configuration file,
         underriding the current config variables with it.
 
         :param filename: a file to read from instead of `self.filename`.
         :type str or None:
         """
-        if filename is None:
-            filename = self.filename
-
         config_parser = configparser.ConfigParser()
 
-        with open(filename) as fp:
+        with open(self.filename) as fp:
             config_parser.read_file(fp)
 
         for section_name in self.ini_section_names.keys():
             if config_parser.has_section(section_name):
                 self.append(config_parser[section_name])
 
-    def write(self, filename: Optional[str] = None) -> None:
+    def write(self: FileBackedConfig) -> None:
         """Writes back configuration to the configuration file. Anything that
         is unset or set to its default is not written.
 
@@ -267,9 +306,6 @@ class FileBackedConfigMixin:
         :param filename: A file to write to instead of `self.filename`.
         :type str or None:
         """
-        if filename is None:
-            filename = self.filename
-
         config_parser = configparser.ConfigParser()
 
         defaulted = self.defaulted_values
@@ -280,7 +316,7 @@ class FileBackedConfigMixin:
             if k in provided or k not in defaulted
         }
 
-        values = {k: {} for k in self.ini_section_names.keys()}
+        values: Dict[str, dict] = {k: {} for k in self.ini_section_names.keys()}
         for section_name, config_vars in self.ini_section_names.items():
             if config_vars == "__ALL__":
                 values = {section_name: variables}
@@ -290,10 +326,10 @@ class FileBackedConfigMixin:
                 if config_var in variables:
                     values[section_name][config_var] = variables[config_var]
 
-        with open(filename, "r") as fp:
+        with open(self.filename, "r") as fp:
             config_parser.read_file(fp)
 
         config_parser.read_dict(values)
 
-        with open(filename, "w") as fp:
+        with open(self.filename, "w") as fp:
             config_parser.write(fp)

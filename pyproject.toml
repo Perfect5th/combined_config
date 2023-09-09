@@ -2,14 +2,20 @@
 name = "combined-config"
 version = "0.1.0"
 description = ""
-authors = ["Mitchell Burton <mitch@mitchellburton.ca>"]
+authors = ["Mitch Burton <mitch@mitchellburton.ca>"]
+maintainers = ["Mitch Burton <mitch@mitchellburton.ca>"]
 readme = "README.md"
-packages = [{include = "combined_config"}]
+packages = [{include = "combined_config", from = "lib"}]
+license = "LGPL-3.0-only"
+repository = "https://github.com/Perfect5th/combined_config"
+exclude = ["tox.ini"]
 
 [tool.poetry.dependencies]
 python = ">=3.8"
 
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.report]
+exclude_also = ["class .*\\(Protocol\\):"]
