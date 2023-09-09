@@ -16,7 +16,7 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11"]
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - name: Setup python
+      - name: Set up python for tox install
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
@@ -25,5 +25,9 @@ jobs:
           fetch-depth: 0
       - name: Install tox
         run: python -m pip install "tox>=4.11,<5"
+      - name: Set up python ${{ matrix.python-version }} for tox env
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Run test suite
         run: tox -e py${{ matrix.python-version }}
