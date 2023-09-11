@@ -1,4 +1,6 @@
 # combined_config
+[![PyPI](https://img.shields.io/pypi/v/combined-config)](https://pypi.org/project/combined-config/)
+[![Supported Python versions](https://img.shields.io/pypi/pyversions/combined-config.svg)](https://pypi.org/project/combined-config/)
 [![check](https://github.com/perfect5th/combined_config/actions/workflows/check.yml/badge.svg)](https://github.com/perfect5th/combined_config/actions/workflows/check.yml)
 
  A Python library for stitching multiple configuration sources together in order or priority.
